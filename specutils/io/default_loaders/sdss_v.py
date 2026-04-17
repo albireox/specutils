@@ -324,7 +324,7 @@ def load_sdss_apVisit_list(file_obj, **kwargs):
     "SDSS-V spec",
     identifier=spec_sdss5_identify,
     dtype=Spectrum,
-    priority=5,
+    priority=15,
     extensions=["fits"],
 )
 def load_sdss_spec_1D(
@@ -374,7 +374,7 @@ def load_sdss_spec_1D(
     identifier=spec_sdss5_identify,
     dtype=SpectrumList,
     force=True,
-    priority=5,
+    priority=15,
     extensions=["fits"],
 )
 def load_sdss_spec_list(file_obj, model=False, **kwargs):
