@@ -384,6 +384,7 @@ def apVisit_HDUList():
 
 def spec_HDUList(n_spectra):
     """Mock an BOSS spec HDUList of n_spectra spectra + 1 coadd."""
+
     np.random.seed(20)
 
     # init primary hdu header
@@ -395,6 +396,10 @@ def spec_HDUList(n_spectra):
     hdr["DATE-OBS"] = "1970-01-01"
     hdr["VERS2D"] = "v6_1_2"
 
+    loglam = np.random.random(10 * n_spectra)
+    loglam.sort()
+    loglam = loglam.reshape((n_spectra, 10))
+
     # Init hdulist
     hdulist = fits.HDUList()
     hdulist.append(fits.PrimaryHDU(header=hdr))
@@ -402,33 +407,77 @@ def spec_HDUList(n_spectra):
     # Init the key HDU's (flux, error, bitmask, spectral)
     names = ["COADD", "SPALL", "ZALL", "ZLINE"]
     for i in range(4):
-        hdu = fits.BinTableHDU.from_columns([
-            fits.Column(name="FLUX", format="E", array=np.random.random(10)),
-            fits.Column(name="LOGLAM",
-                        format="E",
-                        array=np.random.random(10).sort()),
-            fits.Column(name="IVAR", format="E", array=np.random.random(10)),
-            fits.Column(name="AND_MASK",
-                        format="E",
-                        array=np.random.random(10)),
-            fits.Column(name="OR_MASK", format="E",
-                        array=np.random.random(10)),
-        ])
+        hdu = fits.BinTableHDU.from_columns(
+            [
+                fits.Column(
+                    name="FLUX",
+                    format="E",
+                    array=np.random.random(10),
+                ),
+                fits.Column(
+                    name="LOGLAM",
+                    format="E",
+                    array=np.random.random(10).sort(),
+                ),
+                fits.Column(
+                    name="IVAR",
+                    format="E",
+                    array=np.random.random(10),
+                ),
+                fits.Column(
+                    name="AND_MASK",
+                    format="E",
+                    array=np.random.random(10),
+                ),
+                fits.Column(
+                    name="OR_MASK",
+                    format="E",
+                    array=np.random.random(10),
+                ),
+                fits.Column(
+                    name="MODEL",
+                    format="E",
+                    array=np.random.random(10),
+                ),
+            ]
+        )
         hdu.name = names[i]
         hdulist.append(hdu)
     for i in range(n_spectra):
-        hdu = fits.BinTableHDU.from_columns([
-            fits.Column(name="LOGLAM",
-                        format="E",
-                        array=np.random.random(10).sort()),
-            fits.Column(name="FLUX", format="E", array=np.random.random(10)),
-            fits.Column(name="IVAR", format="E", array=np.random.random(10)),
-            fits.Column(name="AND_MASK",
-                        format="E",
-                        array=np.random.random(10)),
-            fits.Column(name="OR_MASK", format="E",
-                        array=np.random.random(10)),
-        ])
+        hdu = fits.BinTableHDU.from_columns(
+            [
+                fits.Column(
+                    name="LOGLAM",
+                    format="E",
+                    array=np.random.random(10).sort(),
+                ),
+                fits.Column(
+                    name="FLUX",
+                    format="E",
+                    array=np.random.random(10),
+                ),
+                fits.Column(
+                    name="IVAR",
+                    format="E",
+                    array=np.random.random(10),
+                ),
+                fits.Column(
+                    name="AND_MASK",
+                    format="E",
+                    array=np.random.random(10),
+                ),
+                fits.Column(
+                    name="OR_MASK",
+                    format="E",
+                    array=np.random.random(10),
+                ),
+                fits.Column(
+                    name="MODEL",
+                    format="E",
+                    array=np.random.random(10),
+                ),
+            ]
+        )
         hdu.name = f"spectrum{i}"
         hdulist.append(hdu)
 
@@ -618,13 +667,15 @@ def test_mwm_list_fail(file_obj, with_wl):
 
 
 @pytest.mark.parametrize(
-    "file_obj,n_spectra",
+    "file_obj,n_spectra,model",
     [
-        ("spec-temp", 1),
-        ("spec-temp", 5),
+        ("spec-temp", 1, False),
+        ("spec-temp", 5, False),
+        ("spec-temp", 1, True),
+        ("spec-temp", 5, True),
     ],
 )
-def test_spec_1d(file_obj, n_spectra):
+def test_spec_1d(file_obj, n_spectra, model):
     """Test BOSS spec loader"""
     tmpfile = str(file_obj) + ".fits"
     spec_HDUList(n_spectra).writeto(tmpfile, overwrite=True)
@@ -632,7 +683,7 @@ def test_spec_1d(file_obj, n_spectra):
     idxs = [1] + list(np.arange(5, 5 + n_spectra, 1))
 
     for i in idxs:
-        data = Spectrum.read(tmpfile, hdu=i)
+        data = Spectrum.read(tmpfile, hdu=i, model=model)
         assert isinstance(data, Spectrum)
         assert len(data.flux.value) == 10
         assert data.flux.unit == Unit("1e-17 erg / (s cm2 Angstrom)")
@@ -641,18 +692,23 @@ def test_spec_1d(file_obj, n_spectra):
         assert data.spectral_axis.unit == Angstrom
         assert len(data.mask) == 10
 
+        assert data.meta['flux_type'] == ('model' if model else 'flux')
+
         assert data[i].meta["header"].get("foobar") == "barfoo"
+
     os.remove(tmpfile)
 
 
 @pytest.mark.parametrize(
-    "file_obj,n_spectra",
+    "file_obj,n_spectra,model",
     [
-        ("spec-temp", 0),
-        ("spec-temp", 5),
+        ("spec-temp", 0, False),
+        ("spec-temp", 5, False),
+        ("spec-temp", 0, True),
+        ("spec-temp", 5, True),
     ],
 )
-def test_spec_list(file_obj, n_spectra):
+def test_spec_list(file_obj, n_spectra, model):
     """Test BOSS SpectrumList loader"""
     tmpfile = str(file_obj) + ".fits"
     spec_HDUList(n_spectra).writeto(tmpfile, overwrite=True)
@@ -666,7 +722,9 @@ def test_spec_list(file_obj, n_spectra):
         assert len(data[i].spectral_axis.value) == 10
         assert data[i].spectral_axis.unit == Angstrom
         assert len(data[i].mask) == 10
+        assert data[i].meta['flux_type'] == ('model' if model else 'flux')
         assert data[i].meta["header"].get("foobar") == "barfoo"
+
     os.remove(tmpfile)
 
 
