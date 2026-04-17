@@ -452,6 +452,7 @@ def _load_BOSS_HDU(hdulist: HDUList, hdu: int, flux_column: str = "FLUX", **kwar
     meta = dict()
     meta["header"] = hdulist[0].header
     meta["name"] = hdulist[hdu].name
+    meta['flux_type'] = flux_column.lower()
 
     return Spectrum(spectral_axis=spectral_axis,
                       flux=flux,
