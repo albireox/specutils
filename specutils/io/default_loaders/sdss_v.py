@@ -67,15 +67,17 @@ def spec_sdss5_identify(origin, *args, **kwargs):
     """
     # Test if fits has extension of type BinTable and check for spec-specific keys
     with read_fileobj_or_hdulist(*args, **kwargs) as hdulist:
+        h0_header = hdulist[0].header
+        h1_header = hdulist[1].header
         return (
-            (hdulist[0].header.get("TELESCOP").lower() == "sdss 2.5-m")  # and
-            # hdulist[0].header.get("OBSERVAT").lower() in ["apo", "lco"]
-            and hdulist[0].header["VERS2D"].startswith("v6")
-            and (hdulist[1].header.get("TTYPE1").lower() == "flux")
-            and (hdulist[1].header.get("TTYPE2").lower() == "loglam")
-            and (len(hdulist) > 1)
-            and (isinstance(hdulist[1], BinTableHDU))
-            and (hdulist[1].header.get("TTYPE3").lower() == "ivar")
+            len(hdulist) > 1
+            and isinstance(hdulist[1], BinTableHDU)
+            and h0_header.get("TELESCOP").lower() in ["sdss 2.5-m", "lco du pont"]
+            and h0_header.get("OBSERVAT").lower() in ["apo", "lco"]
+            and h0_header["VERS2D"].startswith("v6")
+            and h1_header.get("TTYPE1").lower() == "flux"
+            and h1_header.get("TTYPE2").lower() == "loglam"
+            and h1_header.get("TTYPE3").lower() == "ivar"
         )
 
 
@@ -325,7 +327,13 @@ def load_sdss_apVisit_list(file_obj, **kwargs):
     priority=5,
     extensions=["fits"],
 )
-def load_sdss_spec_1D(file_obj, *args, hdu: Optional[int] = None, **kwargs):
+def load_sdss_spec_1D(
+    file_obj,
+    *args,
+    hdu: Optional[int] = None,
+    model=False,
+    **kwargs,
+):
     """
     Load a given BOSS spec file as a Spectrum object.
 
@@ -335,6 +343,8 @@ def load_sdss_spec_1D(file_obj, *args, hdu: Optional[int] = None, **kwargs):
         FITS file name, file object, or HDUList..
     hdu : int
         The specified HDU to load a given spectra from.
+    model : bool
+        If True, load the model spectrum instead of the reduced spectrum.
 
     Returns
     -------
@@ -351,7 +361,12 @@ def load_sdss_spec_1D(file_obj, *args, hdu: Optional[int] = None, **kwargs):
         raise ValueError("Invalid HDU! HDU{} is not spectra.".format(hdu))
     with read_fileobj_or_hdulist(file_obj, memmap=False, **kwargs) as hdulist:
         # directly load the coadd at HDU1
-        return _load_BOSS_HDU(hdulist, hdu, **kwargs)
+        return _load_BOSS_HDU(
+            hdulist,
+            hdu,
+            flux_column=("MODEL" if model else "FLUX"),
+            **kwargs,
+        )
 
 
 @data_loader(
@@ -362,7 +377,7 @@ def load_sdss_spec_1D(file_obj, *args, hdu: Optional[int] = None, **kwargs):
     priority=5,
     extensions=["fits"],
 )
-def load_sdss_spec_list(file_obj, **kwargs):
+def load_sdss_spec_list(file_obj, model=False, **kwargs):
     """
     Load a given BOSS spec file as a SpectrumList object.
 
@@ -370,6 +385,8 @@ def load_sdss_spec_list(file_obj, **kwargs):
     ----------
     file_obj : str, file-like, or HDUList
         FITS file name, file object, or HDUList..
+    model : bool
+        If True, load the model spectra instead of the reduced spectra.
 
     Returns
     -------
@@ -381,11 +398,18 @@ def load_sdss_spec_list(file_obj, **kwargs):
         for hdu in range(1, len(hdulist)):
             if hdulist[hdu].name in ["SPALL", "ZALL", "ZLINE"]:
                 continue
-            spectra.append(_load_BOSS_HDU(hdulist, hdu, **kwargs))
+            spectra.append(
+                _load_BOSS_HDU(
+                    hdulist,
+                    hdu,
+                    flux_column=("MODEL" if model else "FLUX"),
+                    **kwargs,
+                )
+            )
         return SpectrumList(spectra)
 
 
-def _load_BOSS_HDU(hdulist: HDUList, hdu: int, **kwargs):
+def _load_BOSS_HDU(hdulist: HDUList, hdu: int, flux_column: str = "FLUX", **kwargs):
     """
     HDU processor for BOSS spectra redux HDU's
 
@@ -395,6 +419,8 @@ def _load_BOSS_HDU(hdulist: HDUList, hdu: int, **kwargs):
         HDUList generated from imported file.
     hdu : int
         Specified HDU to load.
+    flux_column : str
+        The column name for the flux data. Either ``"FLUX"`` or ``"MODEL"``.
 
     Returns
     -------
@@ -407,7 +433,7 @@ def _load_BOSS_HDU(hdulist: HDUList, hdu: int, **kwargs):
     flux_unit = Unit("1e-17 erg / (Angstrom cm2 s)")  # NOTE: hardcoded unit
     spectral_axis = Quantity(10**hdulist[hdu].data["LOGLAM"], unit=Angstrom)
 
-    flux = Quantity(hdulist[hdu].data["FLUX"], unit=flux_unit)
+    flux = Quantity(hdulist[hdu].data[flux_column], unit=flux_unit)
     # no e_flux, so we use inverse of variance
     ivar = InverseVariance(hdulist[hdu].data["IVAR"])
 
